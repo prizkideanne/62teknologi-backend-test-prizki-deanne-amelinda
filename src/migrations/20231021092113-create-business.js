@@ -23,6 +23,7 @@ module.exports = {
       alias: {
         allowNull: false,
         type: Sequelize.STRING,
+        unique: true,
       },
       image_url: {
         type: Sequelize.TEXT,
@@ -32,6 +33,7 @@ module.exports = {
       },
       phone: {
         type: Sequelize.STRING,
+        unique: true,
       },
       createdAt: {
         allowNull: false,
