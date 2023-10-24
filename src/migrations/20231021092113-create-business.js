@@ -29,11 +29,10 @@ module.exports = {
         type: Sequelize.TEXT,
       },
       price: {
-        type: Sequelize.STRING,
+        type: Sequelize.ENUM("1", "2", "3", "4"),
       },
       phone: {
         type: Sequelize.STRING,
-        unique: true,
       },
       createdAt: {
         allowNull: false,

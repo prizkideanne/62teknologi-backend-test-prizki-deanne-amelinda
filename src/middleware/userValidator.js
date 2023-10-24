@@ -14,7 +14,9 @@ const validate = (validations) => {
       return next();
     }
 
-    res.status(400).json({ errors: errors.array() });
+    res
+      .status(400)
+      .send({ message: "Errors occured.", errors: errors.array() });
   };
 };
 
