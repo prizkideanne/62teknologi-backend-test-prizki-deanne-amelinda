@@ -9,7 +9,7 @@ app.use(express.json());
 app.use("/api/static", express.static(join(__dirname, "public")));
 
 app.use("/api/user", routes.user);
-app.use("/api/my-business", routes.myBusiness);
+app.use("/api/business", routes.myBusiness);
 
 app.use((req, res, next) => {
   if (req.path.includes("/api/")) {

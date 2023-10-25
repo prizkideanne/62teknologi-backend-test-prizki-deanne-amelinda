@@ -53,9 +53,7 @@ const login = async (req, res) => {
       return res.status(400).send({ message: "Incorrect email or password." });
     }
 
-    const accessToken = jwt.sign({ id: user.id }, secretKey, {
-      expiresIn: "24hr",
-    });
+    const accessToken = jwt.sign({ id: user.id }, secretKey);
 
     res.status(200).send({
       message: "Login success!",

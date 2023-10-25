@@ -1,5 +1,6 @@
 const db = require("../models");
 const { Op } = require("sequelize");
+const fs = require("fs");
 const {
   setFromFileNameToDBValue,
   getFilenameFromDbValue,
@@ -31,12 +32,12 @@ const createBusiness = async (req, res) => {
     }
 
     const generateAlias = async (name, city) => {
-      const sanitizedName = name.replace(/ /g, "-").toLowerCase();
-      const sanitizedCity = city.replace(/ /g, "-").toLowerCase();
+      const formatName = name.replace(/ /g, "-").toLowerCase();
+      const formatCity = city.replace(/ /g, "-").toLowerCase();
 
-      const randomDigits = Math.floor(1000 + Math.random() * 9000);
+      const randomNumbers = Math.floor(1000 + Math.random() * 9000);
 
-      const alias = `${sanitizedName}-${sanitizedCity}-${randomDigits}`;
+      const alias = `${formatName}-${formatCity}-${randomNumbers}`;
 
       return alias;
     };
@@ -91,6 +92,7 @@ const createBusiness = async (req, res) => {
     await transaction.commit();
     const business = await db.Business.findOne({
       where: { alias: newBusiness.alias },
+      attributes: { exclude: ["id", "createdAt", "updatedAt", "deletedAt"] },
     });
 
     res
@@ -127,18 +129,19 @@ const editBusiness = async (req, res) => {
 
     const business = await db.Business.findOne({ where: { id, user_id } });
     if (!business) {
-      return res.status(400).send({ message: "No business found." });
+      return res.status(400).send({ message: "Business not found." });
     }
 
     if (req.file) {
-      image_url = setFromFileNameToDBValue(req.file.filename);
-      const oldImage = business.getDataValue("room_img");
+      const oldImage = business.getDataValue("image_url");
+
       const oldImageFile = getFilenameFromDbValue(oldImage);
+
       if (oldImage) {
         fs.unlinkSync(getAbsolutePathPublicFile(oldImageFile));
       }
+      image_url = setFromFileNameToDBValue(req.file.filename);
     }
-
     const editedBusiness = await db.Business.update(
       {
         name,
@@ -164,106 +167,101 @@ const editBusiness = async (req, res) => {
 
     if (req.body.categories) {
       newCategories = req.body.categories.split(",").map((id) => Number(id));
-    }
 
-    if (req.body.transactions) {
-      newTransactions = req.body.transaction
-        .split(",")
-        .map((tid) => Number(tid));
-    }
+      // business category logic
+      const existingCategories = await db.Business_category.findAll({
+        where: { business_id: id },
+      });
 
-    // business category logic
-    const existingCategories = await db.Business_category.findAll({
-      where: { business_id: id },
-    });
+      const categoriesToDelete = existingCategories
+        .filter((category) => !newCategories.includes(category.category_id))
+        .map((category) => category.category_id);
 
-    const categoriesToDelete = existingCategories
-      .filter((category) => !newCategories.includes(category.category_id))
-      .map((category) => category.category_id);
-
-    await db.Business_category.destroy({
-      where: {
-        business_id: id,
-        category_id: categoriesToDelete,
-      },
-      transaction,
-    });
-
-    for (const category of newCategories) {
-      console.log("CUUUK", category);
-      const existingCategory = await db.Business_category.findOne({
+      await db.Business_category.destroy({
         where: {
           business_id: id,
-          category_id: category,
+          category_id: categoriesToDelete,
         },
-        paranoid: false,
         transaction,
       });
 
-      if (!existingCategory) {
-        await db.Business_category.create(
-          {
+      for (const category of newCategories) {
+        const existingCategory = await db.Business_category.findOne({
+          where: {
             business_id: id,
             category_id: category,
           },
-          { paranoid: false, transaction }
-        );
-      } else if (existingCategory.deletedAt) {
-        console.log("INSIDE ELSE IF", category);
-        console.log("DELETED AT", existingCategory.deletedAt);
-        await existingCategory.restore({
-          where: { category_id: category },
+          paranoid: false,
           transaction,
         });
+
+        if (!existingCategory) {
+          await db.Business_category.create(
+            {
+              business_id: id,
+              category_id: category,
+            },
+            { paranoid: false, transaction }
+          );
+        } else if (existingCategory.deletedAt) {
+          await existingCategory.restore({
+            where: { category_id: category },
+            transaction,
+          });
+        }
       }
     }
 
-    // business transaction logic
-    const existingTransaction = await db.Business_transaction.findAll({
-      where: { business_id: id },
-    });
-    console.log("EXIST", existingTransaction);
+    if (req.body.transactions) {
+      newTransactions = req.body.transactions
+        .split(",")
+        .map((tid) => Number(tid));
 
-    const transactionToDelete = existingTransaction
-      .filter((trsc) => !newCategories.includes(trsc.category_id))
-      .map((trsc) => trsc.category_id);
+      // business transaction logic
+      const existingTransaction = await db.Business_transaction.findAll({
+        where: { business_id: id },
+      });
 
-    await db.Business_transaction.destroy({
-      where: {
-        business_id: id,
-        transaction_id: transactionToDelete,
-      },
-      transaction,
-    });
+      const transactionToDelete = existingTransaction
+        .filter((trsc) => !newTransactions.includes(trsc.transaction_id))
+        .map((trsc) => trsc.transaction_id);
 
-    for (const trsc of newTransactions) {
-      const existingTransaction = await db.Business_transaction.findOne({
+      await db.Business_transaction.destroy({
         where: {
           business_id: id,
-          transaction_id: trsc,
+          transaction_id: transactionToDelete,
         },
-        paranoid: false,
         transaction,
       });
 
-      if (!existingTransaction) {
-        await db.Business_transaction.create(
-          {
+      for (const trsc of newTransactions) {
+        const existingTransaction = await db.Business_transaction.findOne({
+          where: {
             business_id: id,
             transaction_id: trsc,
           },
-          { paranoid: false, transaction }
-        );
-      } else if (existingTransaction.deletedAt) {
-        console.log("INSIDE ELSE IF", trsc);
-        console.log("DELETED AT", existingTransaction.deletedAt);
-        await existingTransaction.restore({
-          where: { transaction_id: trsc },
+          paranoid: false,
           transaction,
         });
+
+        if (!existingTransaction) {
+          await db.Business_transaction.create(
+            {
+              business_id: id,
+              transaction_id: trsc,
+            },
+            { paranoid: false, transaction }
+          );
+        } else if (existingTransaction.deletedAt) {
+          await existingTransaction.restore({
+            where: { transaction_id: trsc },
+            transaction,
+          });
+        }
       }
     }
 
+    await transaction.commit();
     const result = await db.Business.findOne({
       where: { id },
       include: [
@@ -275,7 +273,6 @@ const editBusiness = async (req, res) => {
       ],
     });
 
-    await transaction.commit();
     res.status(200).send({ message: "Success edit business.", data: result });
   } catch (error) {
     await transaction.rollback();
@@ -380,7 +377,7 @@ const AllMyBusinesses = async (req, res) => {
         order = [["name", "ASC"]];
         break;
       default:
-        order = [["createdAt", "ASC"]];
+        order = [["createdAt", "DESC"]];
     }
 
     if (price) {
@@ -397,7 +394,7 @@ const AllMyBusinesses = async (req, res) => {
       };
     }
 
-    const results = await db.Business.findAll({
+    const { count, rows } = await db.Business.findAndCountAll({
       where: { user_id, deletedAt: null, ...wherePrice },
       order,
       include: [
@@ -408,11 +405,12 @@ const AllMyBusinesses = async (req, res) => {
         { model: db.Business_category, include: db.Category },
         { model: db.Business_transaction, include: db.Transaction },
       ],
+      distinct: true,
       limit: limitValue,
       offset: offsetValue,
     });
 
-    if (!results || results.length === 0) {
+    if (!rows || rows.length === 0) {
       return res.status(400).send({ message: "Can not get businesses." });
     }
 
@@ -430,32 +428,33 @@ const AllMyBusinesses = async (req, res) => {
           return "-";
       }
     };
-    const data = results.map((result) => ({
-      name: result.name,
-      alias: result.alias,
-      image_url: result.image_url,
-      price: convertPrice(result.price),
-      phone: result.phone,
+    const data = rows.map((row) => ({
+      name: row.name,
+      alias: row.alias,
+      image_url: row.image_url,
+      price: convertPrice(row.price),
+      phone: row.phone,
       location: {
-        address: result.Location.address,
-        city: result.Location.city,
-        zip_code: result.Location.zip_code,
-        country: result.Location.country,
-        state: result.Location.state,
-        latitude: result.Location.latitude,
-        longitude: result.Location.longitude,
+        address: row.Location.address,
+        city: row.Location.city,
+        zip_code: row.Location.zip_code,
+        country: row.Location.country,
+        state: row.Location.state,
+        latitude: row.Location.latitude,
+        longitude: row.Location.longitude,
       },
-      categories: result.Business_categories.map((category) => ({
+      categories: row.Business_categories.map((category) => ({
         title: category.Category.title,
         alias: category.Category.alias,
       })),
-      transactions: result.Business_transactions.map((transaction) => ({
+      transactions: row.Business_transactions.map((transaction) => ({
         title: transaction.Transaction.title,
       })),
     }));
 
     const response = {
       message: "Success get all of my business.",
+      totalData: count,
       data,
     };
 
@@ -479,11 +478,10 @@ const deleteBusiness = async (req, res) => {
     const businessTransaction = await db.Business_transaction.findAll({
       where: { business_id: id },
     });
-    console.log("BUSINESSTRANS", businessTransaction);
+
     const businessCategory = await db.Business_category.findAll({
       where: { business_id: id },
     });
-    console.log("BUSINESSCATE", businessCategory);
 
     if (!business) {
       return res.status(400).send({ message: "Business not found." });
